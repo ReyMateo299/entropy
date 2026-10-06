@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cross Entropy vs. Joint Entropy Visualizer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js for 1D distributions -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- KaTeX for crisp mathematical formulas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body);"></script>
+
+  <style>
+    /* Custom styling for sleek scientific theme and custom sliders */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    input[type=range] {
+      accent-color: #3b82f6;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 4px;
+    }
+    .contour-canvas {
+      image-rendering: auto;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-blue-600 selection:text-white">
+
+  <header class="border-b border-slate-800 bg-slate-900/70 backdrop-blur sticky top-0 z-30 px-6 py-4">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="inline-block w-3 h-3 rounded-full bg-blue-500 animate-pulse"></span>
+          <h1 class="text-xl font-bold tracking-tight text-white">Cross Entropy vs. Joint Entropy</h1>
+          <span class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono font-medium border border-blue-500/30">Gaussian Explorer</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-0.5">Explore the deep conceptual difference between approximating one distribution and measuring combined uncertainty across two.</p>
+      </div>
+
+      <!-- Quick Preset Selector -->
+      <div class="flex flex-wrap items-center gap-1.5 bg-slate-800/80 p-1.5 rounded-lg border border-slate-700/60 text-xs">
+        <span class="text-slate-400 px-1 font-medium">Presets:</span>
+        <button onclick="applyPreset('identical')" class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-200 transition">Identical P=Q</button>
+        <button onclick="applyPreset('meanShift')" class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-200 transition">Shifted Means</button>
+        <button onclick="applyPreset('diffVar')" class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-200 transition">Variance Mismatch</button>
+        <button onclick="applyPreset('highCorr')" class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-200 transition">High Correlation (ρ=0.85)</button>
+        <button onclick="applyPreset('uncorrelated')" class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-200 transition">Independent (ρ=0)</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto w-full p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 flex-grow">
+
+    <aside class="lg:col-span-4 space-y-5">
+
+      <!-- Parameters Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-5">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+            <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+            Distribution Parameters
+          </h2>
+          <button onclick="resetDefaults()" class="text-xs text-blue-400 hover:text-blue-300 transition">Reset</button>
+        </div>
+
+        <!-- Distribution P -->
+        <div class="space-y-3 bg-slate-950/60 p-3.5 rounded-lg border border-emerald-500/20">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-emerald-400 inline-block"></span>
+              <span class="font-bold text-emerald-400 text-sm">Distribution P ~ &#119977;(&mu;<sub>p</sub>, &sigma;<sub>p</sub><sup>2</sup>)</span>
+            </div>
+            <span class="text-xs text-slate-400 font-mono">True / Target</span>
+          </div>
+
+          <!-- Mean mu_p -->
+          <div>
+            <div class="flex justify-between text-xs text-slate-300 mb-1">
+              <span>Mean (&mu;<sub>p</sub>):</span>
+              <span id="val_mu_p" class="font-mono font-bold text-emerald-400">0.00</span>
+            </div>
+            <input type="range" id="mu_p" min="-4" max="4" step="0.1" value="0.0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+          </div>
+
+          <!-- Std sigma_p -->
+          <div>
+            <div class="flex justify-between text-xs text-slate-300 mb-1">
+              <span>Std Dev (&sigma;<sub>p</sub>):</span>
+              <span id="val_sigma_p" class="font-mono font-bold text-emerald-400">1.00</span>
+            </div>
+            <input type="range" id="sigma_p" min="0.3" max="3" step="0.05" value="1.0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+          </div>
+        </div>
+
+        <!-- Distribution Q -->
+        <div class="space-y-3 bg-slate-950/60 p-3.5 rounded-lg border border-sky-500/20">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-sky-400 inline-block"></span>
+              <span class="font-bold text-sky-400 text-sm">Distribution Q ~ &#119977;(&mu;<sub>q</sub>, &sigma;<sub>q</sub><sup>2</sup>)</span>
+            </div>
+            <span class="text-xs text-slate-400 font-mono">Model / Code</span>
+          </div>
+
+          <!-- Mean mu_q -->
+          <div>
+            <div class="flex justify-between text-xs text-slate-300 mb-1">
+              <span>Mean (&mu;<sub>q</sub>):</span>
+              <span id="val_mu_q" class="font-mono font-bold text-sky-400">1.20</span>
+            </div>
+            <input type="range" id="mu_q" min="-4" max="4" step="0.1" value="1.2" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500">
+          </div>
+
+          <!-- Std sigma_q -->
+          <div>
+            <div class="flex justify-between text-xs text-slate-300 mb-1">
+              <span>Std Dev (&sigma;<sub>q</sub>):</span>
+              <span id="val_sigma_q" class="font-mono font-bold text-sky-400">1.40</span>
+            </div>
+            <input type="range" id="sigma_q" min="0.3" max="3" step="0.05" value="1.4" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500">
+          </div>
+        </div>
+
+        <!-- Joint Correlation Slider -->
+        <div class="space-y-3 bg-slate-950/60 p-3.5 rounded-lg border border-purple-500/20">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-purple-400 inline-block"></span>
+              <span class="font-bold text-purple-400 text-sm">Joint Correlation (&rho;)</span>
+            </div>
+            <span class="text-xs text-slate-400 font-mono">For H(X, Y)</span>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs text-slate-300 mb-1">
+              <span>Correlation Coefficient (&rho;):</span>
+              <span id="val_rho" class="font-mono font-bold text-purple-400">0.50</span>
+            </div>
+            <input type="range" id="rho" min="-0.95" max="0.95" step="0.01" value="0.5" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500">
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            In Panel 2, random variables <span class="text-emerald-400 font-mono">X</span> and <span class="text-sky-400 font-mono">Y</span> have marginals <span class="font-mono text-emerald-400">P</span> and <span class="font-mono text-sky-400">Q</span> with correlation <span class="font-mono text-purple-400">&rho;</span>.
+          </p>
+        </div>
+      </div>
+
+      <!-- Quick Concept Distinction Callout -->
+      <div class="bg-gradient-to-br from-slate-900 to-indigo-950/40 border border-slate-800 rounded-xl p-4 text-xs space-y-2.5 leading-relaxed">
+        <h3 class="font-semibold text-amber-300 flex items-center gap-1.5">
+          <svg class="w-4 h-4 text-amber-400 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+          The Critical Conceptual Difference
+        </h3>
+        <p class="text-slate-300">
+          <strong class="text-emerald-400">Cross Entropy H(P, Q)</strong> evaluates <span class="underline decoration-emerald-500">ONE random variable</span> under two different distribution models: how expensive it is to describe events sampled from <span class="text-emerald-400">P</span> using code tuned to <span class="text-sky-400">Q</span>.
+        </p>
+        <p class="text-slate-300">
+          <strong class="text-purple-400">Joint Entropy H(X, Y)</strong> evaluates <span class="underline decoration-purple-500">TWO simultaneous random variables</span>: the total net uncertainty present when observing both (X, Y) together.
+        </p>
+      </div>
+    </aside>
+
+    <div class="lg:col-span-8 space-y-6">
+
+      <!-- Real-time Key Metrics Row -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-center">
+        <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-lg shadow-sm">
+          <div class="text-[11px] text-slate-400 uppercase tracking-wider">H(P) [nats]</div>
+          <div id="m_hp" class="text-base font-bold text-emerald-400 font-mono mt-0.5">--</div>
+          <div class="text-[10px] text-slate-500">Intrinsic P</div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-lg shadow-sm">
+          <div class="text-[11px] text-slate-400 uppercase tracking-wider">H(Q) [nats]</div>
+          <div id="m_hq" class="text-base font-bold text-sky-400 font-mono mt-0.5">--</div>
+          <div class="text-[10px] text-slate-500">Intrinsic Q</div>
+        </div>
+
+        <div class="bg-slate-900 border border-amber-500/30 p-2.5 rounded-lg shadow-sm bg-amber-500/5">
+          <div class="text-[11px] text-amber-300 uppercase tracking-wider">H(P, Q)</div>
+          <div id="m_hpq" class="text-base font-bold text-amber-400 font-mono mt-0.5">--</div>
+          <div class="text-[10px] text-slate-400">Cross Entropy</div>
+        </div>
+
+        <div class="bg-slate-900 border border-rose-500/30 p-2.5 rounded-lg shadow-sm bg-rose-500/5">
+          <div class="text-[11px] text-rose-300 uppercase tracking-wider">D<sub>KL</sub>(P||Q)</div>
+          <div id="m_dkl" class="text-base font-bold text-rose-400 font-mono mt-0.5">--</div>
+          <div class="text-[10px] text-slate-400">Divergence</div>
+        </div>
+
+        <div class="bg-slate-900 border border-purple-500/30 p-2.5 rounded-lg shadow-sm bg-purple-500/5">
+          <div class="text-[11px] text-purple-300 uppercase tracking-wider">H(X, Y)</div>
+          <div id="m_hxy" class="text-base font-bold text-purple-400 font-mono mt-0.5">--</div>
+          <div class="text-[10px] text-slate-400">Joint Entropy</div>
+        </div>
+
+        <div class="bg-slate-900 border border-indigo-500/30 p-2.5 rounded-lg shadow-sm bg-indigo-500/5">
+          <div class="text-[11px] text-indigo-300 uppercase tracking-wider">I(X; Y)</div>
+          <div id="m_mi" class="text-base font-bold text-indigo-400 font-mono mt-0.5">--</div>
+          <div class="text-[10px] text-slate-400">Mutual Info</div>
+        </div>
+      </div>
+
+      <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+              <h2 class="text-base font-bold text-white tracking-wide">Panel 1: Cross Entropy H(P, Q)</h2>
+            </div>
+            <p class="text-xs text-slate-400">Expected code-length when encoding events from true distribution P using code optimized for Q.</p>
+          </div>
+          <div class="text-xs px-3 py-1 bg-slate-800 rounded-md text-amber-300 font-mono border border-slate-700">
+            H(P, Q) = H(P) + D<sub>KL</sub>(P || Q)
+          </div>
+        </div>
+
+        <!-- 1D Chart Canvas -->
+        <div class="relative w-full h-64 bg-slate-950/70 rounded-lg p-2 border border-slate-800/80">
+          <canvas id="crossEntropyChart"></canvas>
+        </div>
+
+        <!-- Cross-Entropy Stacked Breakdown Bar & Mathematics -->
+        <div class="space-y-3 pt-1">
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-slate-400">Composition of H(P, Q):</span>
+            <span class="font-mono text-xs text-slate-300" id="decomp_text">H(P) = 1.42 nats + D_KL(P||Q) = 0.52 nats</span>
+          </div>
+
+          <!-- Stacked Bar Visualizer -->
+          <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden flex shadow-inner">
+            <div id="bar_hp" class="bg-emerald-500 h-full transition-all duration-150" style="width: 50%" title="H(P) Intrinsic Entropy"></div>
+            <div id="bar_dkl" class="bg-rose-500 h-full transition-all duration-150" style="width: 50%" title="KL Divergence Inefficiency Penalty"></div>
+          </div>
+          <div class="flex justify-between text-[11px] text-slate-400">
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded bg-emerald-500 inline-block"></span> Base Uncertainty H(P)</span>
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded bg-rose-500 inline-block"></span> Mismatch Penalty D<sub>KL</sub>(P || Q) &ge; 0</span>
+          </div>
+
+          <!-- Formula details box -->
+          <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-xs font-mono space-y-1.5 text-slate-300">
+            <div class="text-slate-400 text-[11px] font-sans font-semibold">Analytical Gaussian Formula:</div>
+            <div class="text-amber-300 overflow-x-auto py-1">
+              $$H(P, Q) = \frac{1}{2}\ln(2\pi\sigma_q^2) + \frac{\sigma_p^2 + (\mu_p - \mu_q)^2}{2\sigma_q^2}$$
+            </div>
+            <div class="text-[11px] text-slate-400 font-sans mt-1">
+              <strong>Asymmetry Note:</strong> If <span class="text-sky-300">&sigma;<sub>q</sub></span> is much smaller than <span class="text-emerald-300">&sigma;<sub>p</sub></span>, <span class="text-amber-300">H(P, Q)</span> explodes severely because Q allocates virtually zero probability to regions where P still produces samples. Thus <span class="text-amber-300">H(P, Q) &ne; H(Q, P)</span>.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
+              <h2 class="text-base font-bold text-white tracking-wide">Panel 2: Joint Entropy H(X, Y)</h2>
+            </div>
+            <p class="text-xs text-slate-400">Total uncertainty of the combined bivariate distribution (X, Y) with covariance matrix &Sigma;.</p>
+          </div>
+          <div class="text-xs px-3 py-1 bg-slate-800 rounded-md text-purple-300 font-mono border border-slate-700">
+            H(X, Y) = H(X) + H(Y) - I(X; Y)
+          </div>
+        </div>
+
+        <!-- 2D Canvas Heatmap & Marginals -->
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+          <div class="md:col-span-8 flex flex-col items-center">
+            <div class="relative w-full aspect-square max-w-[360px] bg-slate-950 rounded-lg border border-slate-800 overflow-hidden shadow-inner flex items-center justify-center">
+              <canvas id="jointCanvas" width="340" height="340" class="contour-canvas"></canvas>
+            </div>
+            <div class="flex justify-between w-full max-w-[360px] text-[11px] text-slate-500 mt-1 px-1 font-mono">
+              <span>X ~ &#119977;(&mu;<sub>p</sub>, &sigma;<sub>p</sub><sup>2</sup>)</span>
+              <span>Y ~ &#119977;(&mu;<sub>q</sub>, &sigma;<sub>q</sub><sup>2</sup>)</span>
+            </div>
+          </div>
+
+          <!-- Joint Entropy Analysis -->
+          <div class="md:col-span-4 space-y-3">
+            <div class="bg-slate-950/80 p-3 rounded-lg border border-slate-800 space-y-2">
+              <span class="text-xs font-semibold text-slate-300 block">Uncertainty Contraction</span>
+              <p class="text-[11px] text-slate-400 leading-relaxed">
+                When correlation <span class="font-mono text-purple-400">&rho; &rarr; &plusmn;1</span>, knowing <span class="text-emerald-400 font-mono">X</span> almost completely determines <span class="text-sky-400 font-mono">Y</span>. The distribution squashes into a line, driving joint differential entropy toward <span class="font-mono text-purple-400">-&infin;</span>.
+              </p>
+              <div class="text-xs pt-1 border-t border-slate-800/80 space-y-1">
+                <div class="flex justify-between text-slate-300">
+                  <span>H(X) + H(Y):</span>
+                  <span id="joint_independent_sum" class="font-mono font-bold">2.84 nats</span>
+                </div>
+                <div class="flex justify-between text-indigo-400">
+                  <span>Mutual Info I(X;Y):</span>
+                  <span id="joint_mi_val" class="font-mono font-bold">-0.14 nats</span>
+                </div>
+                <div class="flex justify-between text-purple-400 font-semibold border-t border-slate-800 pt-1">
+                  <span>Joint H(X, Y):</span>
+                  <span id="joint_actual_val" class="font-mono">2.70 nats</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Joint Formula Math -->
+            <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-xs font-mono space-y-1 text-slate-300">
+              <div class="text-slate-400 text-[11px] font-sans font-semibold">Differential Joint Entropy:</div>
+              <div class="text-purple-300 overflow-x-auto py-1 text-[11px]">
+                $$H(X, Y) = 1 + \ln(2\pi\sigma_p\sigma_q\sqrt{1-\rho^2})$$
+              </div>
+              <div class="text-[10px] text-slate-400 font-sans">
+                Determinant of &Sigma; = &sigma;<sub>p</sub><sup>2</sup>&sigma;<sub>q</sub><sup>2</sup>(1 - &rho;<sup>2</sup>).
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+
+  <script>
+    // State management
+    const state = {
+      mu_p: 0.0,
+      sigma_p: 1.0,
+      mu_q: 1.2,
+      sigma_q: 1.4,
+      rho: 0.50
+    };
+
+    let crossChartInstance = null;
+
+    // Mathematical utility functions
+    function normalPdf(x, mu, sigma) {
+      const denom = sigma * Math.sqrt(2 * Math.PI);
+      const expo = -0.5 * Math.pow((x - mu) / sigma, 2);
+      return (1.0 / denom) * Math.exp(expo);
+    }
+
+    // Differential entropy of 1D Gaussian in nats: 0.5 * ln(2 * pi * e * sigma^2)
+    function gaussianEntropy(sigma) {
+      return 0.5 * Math.log(2 * Math.PI * Math.E * Math.pow(sigma, 2));
+    }
+
+    // Cross entropy H(P, Q) in nats for continuous 1D Gaussians
+    // H(P, Q) = 0.5 * ln(2 * pi * sigma_q^2) + (sigma_p^2 + (mu_p - mu_q)^2) / (2 * sigma_q^2)
+    function gaussianCrossEntropy(mu_p, sigma_p, mu_q, sigma_q) {
+      const term1 = 0.5 * Math.log(2 * Math.PI * Math.pow(sigma_q, 2));
+      const term2 = (Math.pow(sigma_p, 2) + Math.pow(mu_p - mu_q, 2)) / (2 * Math.pow(sigma_q, 2));
+      return term1 + term2;
+    }
+
+    // KL Divergence D_KL(P || Q) = H(P, Q) - H(P)
+    function gaussianKLDivergence(mu_p, sigma_p, mu_q, sigma_q) {
+      return Math.log(sigma_q / sigma_p) + (Math.pow(sigma_p, 2) + Math.pow(mu_p - mu_q, 2)) / (2 * Math.pow(sigma_q, 2)) - 0.5;
+    }
+
+    // Joint differential entropy H(X, Y) for bivariate normal
+    // H(X,Y) = 1 + ln(2 * pi * sigma_p * sigma_q * sqrt(1 - rho^2))
+    function bivariateJointEntropy(sigma_p, sigma_q, rho) {
+      const clampedRho = Math.min(Math.max(rho, -0.999), 0.999);
+      const detSigma = Math.pow(sigma_p, 2) * Math.pow(sigma_q, 2) * (1 - Math.pow(clampedRho, 2));
+      return 1 + Math.log(2 * Math.PI) + 0.5 * Math.log(detSigma);
+    }
+
+    // Mutual Information I(X; Y) = -0.5 * ln(1 - rho^2)
+    function bivariateMutualInfo(rho) {
+      const clampedRho = Math.min(Math.max(rho, -0.999), 0.999);
+      return -0.5 * Math.log(1 - Math.pow(clampedRho, 2));
+    }
+
+    function initCrossEntropyChart() {
+      const ctx = document.getElementById('crossEntropyChart').getContext('2d');
+
+      crossChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'p(x) [True P]',
+              data: [],
+              borderColor: '#34d399', // emerald
+              backgroundColor: 'rgba(52, 211, 153, 0.12)',
+              borderWidth: 2.2,
+              fill: true,
+              pointRadius: 0,
+              tension: 0.2
+            },
+            {
+              label: 'q(x) [Model Q]',
+              data: [],
+              borderColor: '#38bdf8', // sky
+              backgroundColor: 'transparent',
+              borderWidth: 2.2,
+              borderDash: [5, 4],
+              pointRadius: 0,
+              tension: 0.2
+            },
+            {
+              label: 'Pointwise -p(x)·ln q(x)',
+              data: [],
+              borderColor: '#f59e0b', // amber
+              backgroundColor: 'rgba(245, 158, 11, 0.08)',
+              borderWidth: 1.8,
+              fill: true,
+              pointRadius: 0,
+              tension: 0.2
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 0 },
+          plugins: {
+            legend: {
+              labels: {
+                color: '#cbd5e1',
+                boxWidth: 12,
+                font: { size: 11 }
+              }
+            },
+            tooltip: {
+              mode: 'index',
+              intersect: false
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(71, 85, 105, 0.2)' },
+              ticks: { color: '#94a3b8', maxTicksLimit: 9, font: { size: 10 } }
+            },
+            y: {
+              grid: { color: 'rgba(71, 85, 105, 0.2)' },
+              ticks: { color: '#94a3b8', font: { size: 10 } },
+              suggestedMax: 0.6
+            }
+          }
+        }
+      });
+    }
+
+    function updateCrossEntropyChart() {
+      if (!crossChartInstance) return;
+
+      const numPoints = 120;
+      const xMin = -6.0;
+      const xMax = 6.0;
+      const step = (xMax - xMin) / (numPoints - 1);
+
+      const labels = [];
+      const dataP = [];
+      const dataQ = [];
+      const dataCross = [];
+
+      for (let i = 0; i < numPoints; i++) {
+        const x = xMin + i * step;
+        labels.push(x.toFixed(1));
+
+        const p = normalPdf(x, state.mu_p, state.sigma_p);
+        const q = normalPdf(x, state.mu_q, state.sigma_q);
+        
+        // Pointwise cross entropy integrand: -p(x) * ln(q(x))
+        const logQ = Math.log(Math.max(q, 1e-12));
+        const integrand = -p * logQ;
+
+        dataP.push(p);
+        dataQ.push(q);
+        dataCross.push(integrand);
+      }
+
+      crossChartInstance.data.labels = labels;
+      crossChartInstance.data.datasets[0].data = dataP;
+      crossChartInstance.data.datasets[1].data = dataQ;
+      crossChartInstance.data.datasets[2].data = dataCross;
+      crossChartInstance.update();
+    }
+
+    function renderJointCanvas() {
+      const canvas = document.getElementById('jointCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+
+      const imgData = ctx.createImageData(width, height);
+      const data = imgData.data;
+
+      // Coordinate mapping from -5 to +5 on both axes
+      const xMin = -5.0, xMax = 5.0;
+      const yMin = -5.0, yMax = 5.0;
+
+      const mu_x = state.mu_p;
+      const s_x = state.sigma_p;
+      const mu_y = state.mu_q;
+      const s_y = state.sigma_q;
+      const rho = state.rho;
+
+      const oneMinusRho2 = 1 - rho * rho;
+      const normFactor = 1.0 / (2 * Math.PI * s_x * s_y * Math.sqrt(oneMinusRho2));
+
+      // Peak value at center for color normalization
+      const peakZ = normFactor;
+
+      let pixelIdx = 0;
+      for (let py = 0; py < height; py++) {
+        // Invert Y so positive is up
+        const y = yMax - (py / height) * (yMax - yMin);
+        const dy = (y - mu_y) / s_y;
+
+        for (let px = 0; px < width; px++) {
+          const x = xMin + (px / width) * (xMax - xMin);
+          const dx = (x - mu_x) / s_x;
+
+          // Bivariate Gaussian exponent
+          const z_exponent = -(1.0 / (2 * oneMinusRho2)) * (dx * dx + dy * dy - 2 * rho * dx * dy);
+          const z = normFactor * Math.exp(z_exponent);
+
+          // Normalized intensity [0, 1]
+          const intensity = Math.min(Math.max(z / peakZ, 0), 1);
+
+          // Color gradient: deep slate/navy -> purple -> bright cyan
+          // Level contours can be accentuated using a sine ripple
+          const contourLine = Math.sin(intensity * 28.0);
+          const isEdge = Math.abs(contourLine) > 0.88 ? 0.25 : 0.0;
+
+          // Color map: (R, G, B)
+          const r = Math.floor((Math.pow(intensity, 1.8) * 160 + intensity * 60) + isEdge * 50);
+          const g = Math.floor((Math.pow(intensity, 2.5) * 100 + intensity * 155) + isEdge * 60);
+          const b = Math.floor((intensity * 255) + isEdge * 40);
+
+          data[pixelIdx]     = Math.min(r, 255);
+          data[pixelIdx + 1] = Math.min(g, 255);
+          data[pixelIdx + 2] = Math.min(b, 255);
+          data[pixelIdx + 3] = 255; // full opacity
+
+          pixelIdx += 4;
+        }
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+
+      // Draw Grid & Axes overlay
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      // Center axes (x=0, y=0)
+      const cx = ((0 - xMin) / (xMax - xMin)) * width;
+      const cy = ((yMax - 0) / (yMax - yMin)) * height;
+      ctx.moveTo(cx, 0); ctx.lineTo(cx, height);
+      ctx.moveTo(0, cy); ctx.lineTo(width, cy);
+      ctx.stroke();
+
+      // Draw ellipse 1-sigma contour
+      ctx.strokeStyle = '#c084fc'; // purple-400
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const nSteps = 72;
+      for (let i = 0; i <= nSteps; i++) {
+        const theta = (i / nSteps) * 2 * Math.PI;
+        // Cholesky representation of covariance to trace 1-sigma ellipse
+        const u = Math.cos(theta);
+        const v = Math.sin(theta);
+        const ex = mu_x + s_x * u;
+        const ey = mu_y + s_y * (rho * u + Math.sqrt(oneMinusRho2) * v);
+
+        const screenX = ((ex - xMin) / (xMax - xMin)) * width;
+        const screenY = ((yMax - ey) / (yMax - yMin)) * height;
+
+        if (i === 0) ctx.moveTo(screenX, screenY);
+        else ctx.lineTo(screenX, screenY);
+      }
+      ctx.stroke();
+    }
+
+    function recalculate() {
+      // Numerical values
+      const H_P = gaussianEntropy(state.sigma_p);
+      const H_Q = gaussianEntropy(state.sigma_q);
+      const H_PQ = gaussianCrossEntropy(state.mu_p, state.sigma_p, state.mu_q, state.sigma_q);
+      const D_KL = gaussianKLDivergence(state.mu_p, state.sigma_p, state.mu_q, state.sigma_q);
+      const H_XY = bivariateJointEntropy(state.sigma_p, state.sigma_q, state.rho);
+      const I_XY = bivariateMutualInfo(state.rho);
+
+      // Update metric cards
+      document.getElementById('m_hp').textContent = H_P.toFixed(2);
+      document.getElementById('m_hq').textContent = H_Q.toFixed(2);
+      document.getElementById('m_hpq').textContent = H_PQ.toFixed(2);
+      document.getElementById('m_dkl').textContent = D_KL.toFixed(2);
+      document.getElementById('m_hxy').textContent = H_XY.toFixed(2);
+      document.getElementById('m_mi').textContent = I_XY.toFixed(2);
+
+      // Update stacked composition bar for Cross Entropy
+      // Ratio of H(P) and D_KL
+      const safeKL = Math.max(0, D_KL);
+      const safeHP = Math.max(0.1, H_P);
+      const totalBar = safeHP + safeKL;
+      const pctHP = Math.min(Math.max((safeHP / totalBar) * 100, 5), 95);
+      const pctKL = 100 - pctHP;
+
+      document.getElementById('bar_hp').style.width = pctHP + '%';
+      document.getElementById('bar_dkl').style.width = pctKL + '%';
+      document.getElementById('decomp_text').textContent = 
+        `H(P) = ${H_P.toFixed(2)} nats (${pctHP.toFixed(0)}%) + D_KL(P||Q) = ${safeKL.toFixed(2)} nats (${pctKL.toFixed(0)}%)`;
+
+      // Update Joint Entropy Panel Breakdown
+      const sumIndep = H_P + H_Q;
+      document.getElementById('joint_independent_sum').textContent = sumIndep.toFixed(2) + ' nats';
+      document.getElementById('joint_mi_val').textContent = '-' + I_XY.toFixed(2) + ' nats';
+      document.getElementById('joint_actual_val').textContent = H_XY.toFixed(2) + ' nats';
+
+      // Slider value labels
+      document.getElementById('val_mu_p').textContent = state.mu_p.toFixed(2);
+      document.getElementById('val_sigma_p').textContent = state.sigma_p.toFixed(2);
+      document.getElementById('val_mu_q').textContent = state.mu_q.toFixed(2);
+      document.getElementById('val_sigma_q').textContent = state.sigma_q.toFixed(2);
+      document.getElementById('val_rho').textContent = state.rho.toFixed(2);
+
+      // Redraw graphics
+      updateCrossEntropyChart();
+      renderJointCanvas();
+    }
+
+    function setSliderValues(muP, sigP, muQ, sigQ, rho) {
+      state.mu_p = muP;
+      state.sigma_p = sigP;
+      state.mu_q = muQ;
+      state.sigma_q = sigQ;
+      state.rho = rho;
+
+      document.getElementById('mu_p').value = muP;
+      document.getElementById('sigma_p').value = sigP;
+      document.getElementById('mu_q').value = muQ;
+      document.getElementById('sigma_q').value = sigQ;
+      document.getElementById('rho').value = rho;
+
+      recalculate();
+    }
+
+    function applyPreset(name) {
+      if (name === 'identical') {
+        setSliderValues(0.0, 1.0, 0.0, 1.0, 0.0);
+      } else if (name === 'meanShift') {
+        setSliderValues(-1.2, 1.0, 1.5, 1.0, 0.3);
+      } else if (name === 'diffVar') {
+        // Underestimating variance creates high cross entropy
+        setSliderValues(0.0, 1.8, 0.0, 0.6, 0.4);
+      } else if (name === 'highCorr') {
+        setSliderValues(0.0, 1.2, 0.0, 1.2, 0.88);
+      } else if (name === 'uncorrelated') {
+        setSliderValues(0.0, 1.0, 0.5, 1.2, 0.0);
+      }
+    }
+
+    function resetDefaults() {
+      setSliderValues(0.0, 1.0, 1.2, 1.4, 0.5);
+    }
+
+    function setupEventListeners() {
+      const inputs = [
+        { id: 'mu_p', key: 'mu_p' },
+        { id: 'sigma_p', key: 'sigma_p' },
+        { id: 'mu_q', key: 'mu_q' },
+        { id: 'sigma_q', key: 'sigma_q' },
+        { id: 'rho', key: 'rho' }
+      ];
+
+      inputs.forEach(item => {
+        const el = document.getElementById(item.id);
+        el.addEventListener('input', (e) => {
+          state[item.key] = parseFloat(e.target.value);
+          recalculate();
+        });
+      });
+
+      // Canvas resizing adaptability
+      window.addEventListener('resize', () => {
+        renderJointCanvas();
+      });
+    }
+
+    // App Initialization on Window Load
+    window.addEventListener('load', () => {
+      initCrossEntropyChart();
+      setupEventListeners();
+      recalculate();
+    });
+  </script>
+</body>
+</html>
